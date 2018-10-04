@@ -1,0 +1,313 @@
+#####################################################################
+# Meta Analysis - Unpaired Analysis Master Code 
+# Goal: code to accompany Pandori & Sorte 2018
+# Author: LLM Pandori
+# Date Created: 4/19/17 (original code this is based on)
+# Last Edited: 10/4/18 
+#####################################################################
+
+# Reminder to clear your console and environment 
+
+# Load required libraries (with purpose in commments)
+library(plyr)     # summarize data
+library(readr)    # reads csv files
+library(mosaic)   # home-grown bootstrapping
+library(metafor)  # mixed effects model + failsafe number calculation
+library(boot)     # bootstrapping
+library(car)      # 
+library(sjPlot)   # good plots
+library(sjmisc)   # required for another package
+library(lme4)     # linear mixed-effects models
+library(effects)  #
+library(MuMIn)    #
+library(MASS)     #
+library(multcomp) #
+
+# Reminder to set working directory if not in a project
+
+# Load Data (inlcudes all stressors x scenarios)
+data1 <- read_csv(Pandori&Sorte_Oikos_UnpairedAnalysis_Master_Rversion.csv")
+
+# See readme file for column name explanations
+
+# QC data -----
+# number of studies
+unique(data1$paper)
+# scenarios (should have 3: NA, cchange (mean) and extreme)
+unique(data1$scen)
+# check life stages (should be 4: emb, lar, juv, adu)
+unique(data1$lifestage)
+# habitats (should have 2: intertidal, subtidal)
+unique(data1$habitat)
+# phyla (should have 6)
+unique(data1$phylum)
+
+# create LRR 'error' column of 1's
+data1$Ones<-'1'
+data1$Ones<-as.numeric(data1$Ones)
+
+# First analysis type = no scenario -----
+  
+### subset into stressors first
+  unique(data1$stor)
+  temp<-subset(data1, data1$stor == 'Temp.')
+  ph<-subset(data1, data1$stor == 'pH')
+  do<-subset(data1, data1$stor == 'DO')
+  
+  # subset each stressor by life stage
+  unique(temp$lifestage) # look at life stages in temp dataset
+  temp.adu<-subset(temp, temp$lifestage == 'Adult')
+  temp.juv<-subset(temp, temp$lifestage == 'Juvenile')
+  temp.lar<-subset(temp, temp$lifestage == 'Larvae')
+  temp.emb<-subset(temp, temp$lifestage == 'Embryo')
+  
+  unique(ph$lifestage) # look at life stages within ph dataset
+  ph.adu<-subset(ph, ph$lifestage == 'Adult')
+  ph.juv<-subset(ph, ph$lifestage == 'Juvenile')
+  ph.lar<-subset(ph, ph$lifestage == 'Larvae')
+  ph.emb<-subset(ph, ph$lifestage == 'Embryo')
+  
+  unique(do$lifestage) # look at life stages within do dataset
+  do.adu<-subset(do, do$lifestage == 'Adult')
+  do.juv<-subset(do, do$lifestage == 'Juvenile')
+  do.lar<-subset(do, do$lifestage == 'Larvae')
+  # no embryo
+
+### Construct bootstrap CI's for each life stage within each scenario
+  # boot function
+  bootmean <- function(x, d) {
+    return(mean(x[d]))}
+  
+  # temp life stages
+  temp.adu.boot<-boot(temp.adu$lrr, bootmean, R = 10000)
+  temp.juv.boot<-boot(temp.juv$lrr, bootmean, R = 10000)
+  temp.lar.boot<-boot(temp.lar$lrr, bootmean, R = 10000)
+  temp.emb.boot<-boot(temp.emb$lrr, bootmean, R = 10000)
+  
+  # ph life stages 
+  ph.adu.boot<-boot(ph.adu$lrr, bootmean, R = 10000)
+  ph.juv.boot<-boot(ph.juv$lrr, bootmean, R = 10000)
+  ph.lar.boot<-boot(ph.lar$lrr, bootmean, R = 10000)
+  ph.emb.boot<-boot(ph.emb$lrr, bootmean, R = 10000)
+  
+  # do life stages
+  do.adu.boot<-boot(do.adu$lrr, bootmean, R = 10000)
+  do.juv.boot<-boot(do.juv$lrr, bootmean, R = 10000)
+  do.lar.boot<-boot(do.lar$lrr, bootmean, R = 10000)
+  # no emb for do
+  
+  # construct confidence intervals 
+  
+  # temp life stages
+  temp.adu.ci<-boot.ci(temp.adu.boot, conf = 0.95, type = 'norm')
+  temp.juv.ci<-boot.ci(temp.juv.boot, conf = 0.95, type = 'norm')
+  temp.lar.ci<-boot.ci(temp.lar.boot, conf = 0.95, type = 'norm')
+  temp.emb.ci<-boot.ci(temp.emb.boot, conf = 0.95, type = 'norm')
+  
+  # ph life stages
+  ph.adu.ci<-boot.ci(ph.adu.boot, conf = 0.95, type = 'norm')
+  ph.juv.ci<-boot.ci(ph.juv.boot, conf = 0.95, type = 'norm')
+  ph.lar.ci<-boot.ci(ph.lar.boot, conf = 0.95, type = 'norm')
+  ph.emb.ci<-boot.ci(ph.emb.boot, conf = 0.95, type = 'norm')
+  
+  # do life stages
+  do.adu.ci<-boot.ci(do.adu.boot, conf = 0.95, type = 'norm')
+  do.juv.ci<-boot.ci(do.juv.boot, conf = 0.95, type = 'norm')
+  do.lar.ci<-boot.ci(do.lar.boot, conf = 0.95, type = 'norm')
+  # no embryo for do
+  
+  # create results table for later plotting + supplement
+  noscenario.results<-matrix(c(
+    # first do stressors
+    'Warming', 'Warming','Warming','Warming',
+    'Acidification','Acidification','Acidification','Acidification',
+    'Hypoxia','Hypoxia','Hypoxia',
+    # next do life stages
+    'Adult', 'Juvenile', 'Larva', 'Embryo', 
+    'Adult', 'Juvenile', 'Larva', 'Embryo', 
+    'Adult', 'Juvenile', 'Larva',
+    # next do bootstrapped means
+    temp.adu.boot$t0, temp.juv.boot$t0, temp.lar.boot$t0, temp.emb.boot$t0, ph.adu.boot$t0, ph.juv.boot$t0, ph.lar.boot$t0, ph.emb.boot$t0, do.adu.boot$t0, do.juv.boot$t0, do.lar.boot$t0,
+    # next do upper CI's
+    temp.adu.ci$normal[,2], temp.juv.ci$normal[,2], temp.lar.ci$normal[,2], temp.emb.ci$normal[,2],ph.adu.ci$normal[,2], ph.juv.ci$normal[,2], ph.lar.ci$normal[,2], ph.emb.ci$normal[,2], do.adu.ci$normal[,2], do.juv.ci$normal[,2], do.lar.ci$normal[,2],
+    # next do lower CI's
+    temp.adu.ci$normal[,3], temp.juv.ci$normal[,3], temp.lar.ci$normal[,3], temp.emb.ci$normal[,3],ph.adu.ci$normal[,3], ph.juv.ci$normal[,3], ph.lar.ci$normal[,3], ph.emb.ci$normal[,3], do.adu.ci$normal[,3], do.juv.ci$normal[,3], do.lar.ci$normal[,3],
+    # last, do sample sizes
+    length(temp.adu$lrr), length(temp.juv$lrr), length(temp.lar$lrr), length(temp.emb$lrr), length(ph.adu$lrr), length(ph.juv$lrr), length(ph.lar$lrr), length(ph.emb$lrr), length(do.adu$lrr), length(do.juv$lrr), length(do.lar$lrr))
+    # specify matrix dimensions
+    , nrow = 11, ncol = 6)
+  
+  # coerce into data frame, and name columns
+  noscenario.results<-as.data.frame(noscenario.results)
+  colnames(noscenario.results)<-c('Stressor', 'Life_Stage', 'Mean', 'Upper_CI', 'Lower_CI', 'N')
+  
+  noscenario.results
+  
+### Calculate failsafe numbers for CI's (Rosenthal + Rosenberg)
+  
+  # temp, Rosenthal Method
+  temp.adu.fs1<-fsn(yi = lrr, vi = Ones, data = temp.adu, type = 'Rosenthal', alpha = 0.05)
+  temp.juv.fs1<-fsn(yi = lrr, vi = Ones, data = temp.juv, type = 'Rosenthal', alpha = 0.05)
+  temp.lar.fs1<-fsn(yi = lrr, vi = Ones, data = temp.lar, type = 'Rosenthal', alpha = 0.05)
+  temp.emb.fs1<-fsn(yi = lrr, vi = Ones, data = temp.emb, type = 'Rosenthal', alpha = 0.05)
+  
+  # pH, Rosenthal method
+  ph.adu.fs1<-fsn(yi = lrr, vi = Ones, data = ph.adu, type = 'Rosenthal', alpha = 0.05)
+  ph.juv.fs1<-fsn(yi = lrr, vi = Ones, data = ph.juv, type = 'Rosenthal', alpha = 0.05)
+  ph.lar.fs1<-fsn(yi = lrr, vi = Ones, data = ph.lar, type = 'Rosenthal', alpha = 0.05)
+  ph.emb.fs1<-fsn(yi = lrr, vi = Ones, data = ph.emb, type = 'Rosenthal', alpha = 0.05)
+  
+  # DO, Rosenthal method
+  do.adu.fs1<-fsn(yi = lrr, vi = Ones, data = do.adu, type = 'Rosenthal', alpha = 0.05)
+  do.juv.fs1<-fsn(yi = lrr, vi = Ones, data = do.juv, type = 'Rosenthal', alpha = 0.05)
+  do.lar.fs1<-fsn(yi = lrr, vi = Ones, data = do.lar, type = 'Rosenthal', alpha = 0.05)
+  
+  # temp, Rosenberg method
+  temp.adu.fs2<-fsn(yi = lrr, vi = Ones, data = temp.adu, type = 'Rosenberg', alpha = 0.05)
+  temp.juv.fs2<-fsn(yi = lrr, vi = Ones, data = temp.juv, type = 'Rosenberg', alpha = 0.05)
+  temp.lar.fs2<-fsn(yi = lrr, vi = Ones, data = temp.lar, type = 'Rosenberg', alpha = 0.05)
+  temp.emb.fs2<-fsn(yi = lrr, vi = Ones, data = temp.emb, type = 'Rosenberg', alpha = 0.05)
+  
+  # pH, Rosenberg method
+  ph.adu.fs2<-fsn(yi = lrr, vi = Ones, data = ph.adu, type = 'Rosenberg', alpha = 0.05)
+  ph.juv.fs2<-fsn(yi = lrr, vi = Ones, data = ph.juv, type = 'Rosenberg', alpha = 0.05)
+  ph.lar.fs2<-fsn(yi = lrr, vi = Ones, data = ph.lar, type = 'Rosenberg', alpha = 0.05)
+  ph.emb.fs2<-fsn(yi = lrr, vi = Ones, data = ph.emb, type = 'Rosenberg', alpha = 0.05)
+  
+  # DO, Rosenberg method
+  do.adu.fs2<-fsn(yi = lrr, vi = Ones, data = do.adu, type = 'Rosenberg', alpha = 0.05)
+  do.juv.fs2<-fsn(yi = lrr, vi = Ones, data = do.juv, type = 'Rosenberg', alpha = 0.05)
+  do.lar.fs2<-fsn(yi = lrr, vi = Ones, data = do.lar, type = 'Rosenberg', alpha = 0.05)  
+  
+  # Add to noscenario.results table
+  noscenario.results$FS_Rosenthal<-c(temp.adu.fs1$fsnum, temp.juv.fs1$fsnum, temp.lar.fs1$fsnum, temp.emb.fs1$fsnum, ph.adu.fs1$fsnum, ph.juv.fs1$fsnum, ph.lar.fs1$fsnum, ph.emb.fs1$fsnum, do.adu.fs1$fsnum, do.juv.fs1$fsnum, do.lar.fs1$fsnum)
+  
+  noscenario.results$FS_Rosenberg<-c(temp.adu.fs2$fsnum, temp.juv.fs2$fsnum, temp.lar.fs2$fsnum, temp.emb.fs2$fsnum, ph.adu.fs2$fsnum, ph.juv.fs2$fsnum, ph.lar.fs2$fsnum, ph.emb.fs2$fsnum, do.adu.fs2$fsnum, do.juv.fs2$fsnum, do.lar.fs2$fsnum) 
+  
+  # Add column with 5N + 10 criterion of FS # robustness
+  noscenario.results$N<-as.numeric(noscenario.results$N)
+  noscenario.results$N_Criterion<-(noscenario.results$N*5 + 10)
+  
+  noscenario.results
+  
+  # save this results data frame as a csv for easy future reference
+  write.csv(noscenario.results, 'Master_UnpairedAnalysis_NoScenario_BootResults_7.3.18.csv')
+  
+  # make sure numbers are in numeric (not factor) format
+  noscenario.results$Mean<-as.numeric(paste(noscenario.results$Mean))
+  noscenario.results$Upper_CI<-as.numeric(paste(noscenario.results$Upper_CI))
+  noscenario.results$Lower_CI<-as.numeric(paste(noscenario.results$Lower_CI))
+  
+### plot results (code from Meta_PanelFig_Code_7.7.17.R)
+    # subset into stressors
+    unique(noscenario.results$Stressor)
+    temp.result<-subset(noscenario.results, noscenario.results$Stressor == 'Warming')
+    ph.result<-subset(noscenario.results, noscenario.results$Stressor == 'Acidification')
+    do.result<-subset(noscenario.results, noscenario.results$Stressor == 'Hypoxia')
+    
+  # one panel for each stressor
+  par(mfrow=c(1,1)) # only one panel
+  par(mar=c(4,6,4,1)) # set margins
+  par(bg = NA) # no background 
+  
+  # Temp. panel
+  plot(0,type='n', #make empty plot
+       xlim=c(-2.5,0.5),
+       ylim=c(0.75,4.25), 
+       xlab='LRR', 
+       ylab = "",
+       main = 'Warming - Lethal',
+       pch=19, yaxt='n', axes=F, cex.lab=1.5)
+  
+  abline(v=0, lty = 2, lwd = 2) # make dotted line @ x = 0
+  
+  # add in CI's
+  arrows(temp.result$Upper_CI,4:1,temp.result$Lower_CI,4:1, angle = 90, code = 3, length = 0, lty = 1, lwd=5, col='grey') 
+  
+  axis(2, at=c(1,2,3,4), labels= c('Embryo', 'Larva', 'Juvenile','Adult'), #axis 1 is x, axis 2 is y
+       cex.axis=1.25, las = 2, tick = FALSE)
+  points(temp.result$Mean, 4:1, cex=1.5, pch=19, col='black')
+  axis(1, cex.axis=1.25, tick = FALSE)
+  box() # adds box around figures
+  
+  # Acidification panel
+  plot(0,type='n', #make empty plot
+       xlim=c(-2.5,0.5),
+       ylim=c(0.75,4.25), 
+       xlab='LRR', 
+       ylab = "",
+       main = 'Acidification - Lethal',
+       pch=19, yaxt='n', axes=F, cex.lab=1.5)
+  
+  abline(v=0, lty = 2, lwd = 2) # make dotted line @ x = 0
+  
+  # add in CI's
+  arrows(ph.result$Upper_CI,4:1,ph.result$Lower_CI,4:1, angle = 90, code = 3, length = 0, lty = 1, lwd=5, col='grey') 
+  
+  axis(2, at=c(1,2,3,4), labels= c('Embryo', 'Larva', 'Juvenile','Adult'), #axis 1 is x, axis 2 is y
+       cex.axis=1.25, las = 2, tick = FALSE)
+  points(ph.result$Mean, 4:1, cex=1.5, pch=19, col='black')
+  axis(1, cex.axis=1.25, tick = FALSE)
+  box() # adds box around figures
+
+  # hypoxia panel
+  plot(0,type='n', #make empty plot
+       xlim=c(-12,1),
+       ylim=c(0.75,4.25), 
+       xlab='LRR', 
+       ylab = "",
+       main = 'Hypoxia - Lethal',
+       pch=19, yaxt='n', axes=F, cex.lab=1.5)
+  
+  abline(v=0, lty = 2, lwd = 2) # make dotted line @ x = 0
+  
+  # add in CI's
+  arrows(do.result$Upper_CI,4:2,do.result$Lower_CI,4:2, angle = 90, code = 3, length = 0, lty = 1, lwd=5, col='grey') 
+  
+  axis(2, at=c(1,2,3,4), labels= c('Embryo', 'Larva', 'Juvenile','Adult'), #axis 1 is x, axis 2 is y
+       cex.axis=1.25, las = 2, tick = FALSE)
+  points(do.result$Mean, 4:2, cex=1.5, pch=19, col='black')
+  axis(1, cex.axis=1.25, tick = FALSE)
+  box() # adds box around figures
+  
+### 2-step Model Fitting - REML and LMER using the metafor pkg
+  # Warming
+  View(temp)
+  temp$lifestage<-as.factor(temp$lifestage)
+  temp$phylum<-as.factor(temp$phylum)
+  
+  temp.model<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage + phylum + tmt_mag + tmt_time, random = ~1|study, data = temp)
+  
+  summary(temp.model)
+  
+    # significant factors are life stage + treatment magnitude
+    # plot LRR by treatment magnitude
+    plot(temp$tmt_mag, temp$lrr)
+    plot(ph$tmt_mag, ph$lrr)
+
+    # do post-hoc test: which stages are different?
+  
+    
+  # Acidification
+  ph$lifestage<-as.factor(ph$lifestage)
+  ph$phylum<-as.factor(ph$phylum)
+  
+  ph.model<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage + phylum + tmt_mag + tmt_time, random = ~1|study, data = ph)
+  
+  summary(ph.model)
+    # significant factor is treatment magnitude (and marginal life stage significance)
+  
+  # Hypoxia
+  do$lifestage<-as.factor(do$lifestage)
+  do$phylum<-as.factor(do$phylum)
+  
+  do.model<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage + phylum, random = ~1|study, data = do)
+  
+  summary(do.model)
+  # lifestage is significant, phylum is not
+
+### Now run analyses with no phylum
+  # Warming
+  temp.model.np<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage + tmt_mag + tmt_time, random = ~1|study, data = temp)
+  
+  summary(temp.model.np)
