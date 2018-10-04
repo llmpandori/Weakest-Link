@@ -1,0 +1,334 @@
+#####################################################################
+# Meta Analysis - Paired Analysis Master Code 
+# Goal: code to accompany Weakest Link publication
+# Author: Lauren L M Pandori
+# Date Created: 4/19/17
+# Last Edited: 10/4/18 
+#####################################################################
+
+# Reminder to clear your console and environment 
+
+# Load required libraries (with purpose in commments)
+library(plyr)     # summarize data
+library(readr)    # reads csv files
+library(mosaic)   # home-grown bootstrapping
+library(metafor)  # mixed effects model + failsafe number calculation
+library(boot)     # bootstrapping
+library(car)      # 
+library(sjPlot)   # good plots
+library(sjmisc)   # required for another package
+library(lme4)     # linear mixed-effects models
+library(effects)  #
+library(MuMIn)    #
+library(MASS)     #
+library(multcomp) #
+
+# Reminder to set working directory if not in a project
+
+# Load Data (inlcudes all stressors x scenarios)
+data1 <- read_csv("Pandori&Sorte_2018_PairedAnalysis_Master_Rversion.csv")
+
+# See readme file for column name explanations
+
+# QC data -----
+# number of studies
+unique(data1$paper)
+# stressors and response types (should have 5: temp leth + non, ph leth + non, and do x leth)
+unique(data1$stor)
+# check life stage combinations (should be 6: jl, al, aj, ae, je, le)
+unique(data1$lifestage)
+# habitats (should have 2: intertidal, subtidal)
+unique(data1$habitat)
+# phyla (should have 6)
+unique(data1$phylum)
+# genus
+unique(data1$genus)
+# latitude
+unique(data1$lat)
+
+# create LRR 'error' column of 1's
+data1$Ones<-'1'
+data1$Ones<-as.numeric(data1$Ones)
+
+# create numeric version of lifestage column (for LMER)
+data1$lifestage2<-data1$lifestage
+
+data1$lifestage2<- revalue(data1$lifestage2, c("aj" = '1', "al" = '2', "ae" = '3', "jl" = '4', "je" = '5', "le" = '6'))
+
+data1$lifestage2<-as.numeric(paste(data1$lifestage2))
+
+# First analysis - spp separated (unit of replication is study)
+### subset into stressors and responses first
+  unique(data1$stor)
+
+  tempxleth<-subset(data1, data1$stor == 'tempxleth')
+  tempxnon<-subset(data1, data1$stor == 'tempxnon')
+  phxleth<-subset(data1, data1$stor == 'phxleth')
+  phxnon<-subset(data1, data1$stor == 'phxnon')
+  doxleth<-subset(data1, data1$stor == 'doxleth')
+  # no do x non-lethal data
+
+### Construct bootstrap CI's for each life stage within each scenario
+  # boot function
+  bootmean <- function(x, d) {
+    return(mean(x[d]))}
+  
+  # construct bootstrap datasets
+  tempxleth.boot<-boot(tempxleth$lrr, bootmean, R = 10000)
+  tempxnon.boot<-boot(tempxnon$lrr, bootmean, R = 10000)
+  phxleth.boot<-boot(phxleth$lrr, bootmean, R = 10000)
+  phxnon.boot<-boot(phxnon$lrr, bootmean, R = 10000)
+  doxleth.boot<-boot(doxleth$lrr, bootmean, R = 10000)
+  
+  # construct confidence intervals 
+  tempxleth.ci<-boot.ci(tempxleth.boot, conf = 0.95, type = 'norm')
+  tempxnon.ci<-boot.ci(tempxnon.boot, conf = 0.95, type = 'norm')
+  phxleth.ci<-boot.ci(phxleth.boot, conf = 0.95, type = 'norm')
+  phxnon.ci<-boot.ci(phxnon.boot, conf = 0.95, type = 'norm')
+  doxleth.ci<-boot.ci(doxleth.boot, conf = 0.95, type = 'norm')
+  
+  # create results table for later plotting + supplement
+  results<-matrix(c(
+    # first give labels
+    'Lethal', 'Non', 'Lethal', 'Non', 'Lethal',
+    # now give stressors
+    'Warming', 'Warming', 'Acidification', 'Acidification', 'Hypoxia',
+    # now give means
+    tempxleth.boot$t0, tempxnon.boot$t0, phxleth.boot$t0, phxnon.boot$t0, doxleth.boot$t0,
+    # now give upper CI's
+    tempxleth.ci$normal[,2], tempxnon.ci$normal[,2], 
+    phxleth.ci$normal[,2], phxnon.ci$normal[,2], 
+    doxleth.ci$normal[,2],
+    # now give lower CI's
+    tempxleth.ci$normal[,3], tempxnon.ci$normal[,3],
+    phxleth.ci$normal[,3], phxnon.ci$normal[,3],
+    doxleth.ci$normal[,3],
+    # now give sample sizes
+    length(tempxleth$lrr), length(tempxnon$lrr),
+    length(phxleth$lrr), length(phxnon$lrr),
+    length(doxleth$lrr))
+    # specify # of rows and columns
+    , nrow = 5, ncol = 6)
+    
+  # convert to data frame and save as csv
+  results<-as.data.frame(results)
+  colnames(results)<-c('Leth_Non', 'Stressor', 'Mean', 'Upper_CI', 'Lower_CI', 'N')
+  write.csv(results, 'Master_PairedAnalysis_Results_7.5.18_V2.csv')
+  
+### Plot results
+  # make numeric columns numeric
+  results$Mean<-as.numeric(paste(results$Mean))
+  results$Upper_CI<-as.numeric(paste(results$Upper_CI))
+  results$Lower_CI<-as.numeric(paste(results$Lower_CI))
+  
+  # subset into lethal and non-lethal
+  unique(results$Leth_Non)
+  leth<-subset(results, results$Leth_Non == 'Lethal')
+  non<-subset(results, results$Leth_Non == 'Non')
+  
+  # Plot lethal first (Fig. 2)
+  par(mfrow=c(1,1)) # only one panel
+  par(mar=c(4,6,4,1)) # set margins
+  par(bg = NA) # no background 
+  
+  # Temp. panel
+  plot(0,type='n', #make empty plot
+       xlim=c(-4,4),
+       ylim=c(0.75,5.25), 
+       xlab='LRR Difference', 
+       ylab = "",
+       main = 'Lethal Effects',
+       pch=19, yaxt='n', axes=F, cex.lab=1.5)
+  
+  abline(v=0, lty = 2, lwd = 2) # make dotted line @ x = 0
+  
+  # add in CI's
+  arrows(leth$Upper_CI,3:1,leth$Lower_CI,3:1, angle = 90, code = 3, length = 0, lty = 1, lwd=5, col='grey') 
+  
+  axis(2, at=c(1,2,3), labels= c('Hypoxia', 'Acidification', 'Warming'), cex.axis=1.25, las = 2, tick = FALSE)
+  points(leth$Mean, 3:1, cex=1.5, pch=19, col='black')
+  axis(1, cex.axis=1.25, tick = FALSE)
+  box() # adds box around figures
+  
+  # Non-lethal figure (Supplement XX)
+  plot(0,type='n', #make empty plot
+       xlim=c(-1,1),
+       ylim=c(0.75,4.25), 
+       xlab='LRR Difference', 
+       ylab = "",
+       main = 'Non-Lethal Effects',
+       pch=19, yaxt='n', axes=F, cex.lab=1.5)
+  
+  abline(v=0, lty = 2, lwd = 2) # make dotted line @ x = 0
+  
+  # add in CI's
+  arrows(non$Upper_CI,2:1,non$Lower_CI,2:1, angle = 90, code = 3, length = 0, lty = 1, lwd=5, col='grey') 
+  
+  axis(2, at=c(1,2), labels= c('Acidification', 'Warming'), cex.axis=1.25, las = 2, tick = FALSE)
+  points(non$Mean, 2:1, cex=1.5, pch=19, col='black')
+  axis(1, cex.axis=1.25, tick = FALSE)
+  box() # adds box around figures
+  
+### 2-step Model Fitting - REML and LMER using the metafor pkg
+  # Lethal responses only
+  # Warming
+  tempxleth.mod<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage2 + habitat + tmt_mag + tmt_time, random = ~1|study, data = tempxleth)
+  
+  summary(tempxleth.mod)
+  
+  # Run with genus as factor (Appendix 10)
+    # Remove columns with NA for lat.
+    tempxleth2<-subset(tempxleth, tempxleth$lat != "NA")
+    # Re-value genus to make it numeric
+    tempxleth2$genus<-as.factor(tempxleth2$genus)
+    tempxleth2$genus2<- revalue(tempxleth2$genus, c("Mytilus" = '1', "Molgula" = '2', "Crepidula" = '3', "Ectopleura" = '4', "Helice" = '5', "Strechinus" = '6', 'Paramuricea' = '7', 'Zeylanicobdella' = '8', 'Spiula' = '9', 'Loligo' = '10', 'Gammaru' = '11', 'Echinodermata' = '12', 'Hyale' = '13', 'Sterechinus' = '14', 'Mytilopsis' = '15', 'Mercenaria' = '16', 'Argopecten' = '17', 'Farfantepenaeus' = '18'))
+    tempxleth2$genus2<-as.numeric(paste(tempxleth2$genus2))
+   # Run new model with genus (Appendix 9)                     
+  tempxleth.mod2<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage2 + habitat + tmt_mag + tmt_time, random = ~1|genus2, data = tempxleth2)
+  
+  summary(tempxleth.mod2)
+  
+  # Run with latitude as factor (Appendix 9)
+  tempxleth.mod3<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage2 + habitat + tmt_mag + tmt_time + lat, random = ~1|study, data = tempxleth)
+  
+  summary(tempxleth.mod3)
+   
+  plot(lrr ~ lat, data = tempxleth)
+  
+  # Acidification
+  phxleth.mod<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage2 + habitat + tmt_mag + tmt_time, random = ~ 1|study, data = phxleth)
+  
+  summary(phxleth.mod)
+  
+  # Hypoxia
+  doxleth.mod<-rma.mv(yi = lrr, V = Ones, mods = ~ lifestage2 + habitat, random = ~ 1|study, data = doxleth)
+  
+  summary(doxleth.mod)
+  
+  # Life stage and habitat were significant for Warming
+  # Create figure showing how they differ
+  unique(tempxleth$lifestage)
+    # subset by life stage pairing
+  aj<-subset(tempxleth, tempxleth$lifestage == 'aj')
+  ae<-subset(tempxleth, tempxleth$lifestage == 'ae')
+  jl<-subset(tempxleth, tempxleth$lifestage == 'jl')
+  le<-subset(tempxleth, tempxleth$lifestage == 'le')
+    # bootstrap
+  aj.boot<-boot(aj$lrr, bootmean, R = 10000)
+  ae.boot<-boot(ae$lrr, bootmean, R = 10000)
+  jl.boot<-boot(jl$lrr, bootmean, R = 10000)
+  le.boot<-boot(le$lrr, bootmean, R = 10000)
+    # construct CI's
+  aj.ci<-boot.ci(aj.boot, conf = 0.95, type = 'norm')
+  ae.ci<-boot.ci(ae.boot, conf = 0.95, type = 'norm')
+  jl.ci<-boot.ci(jl.boot, conf = 0.95, type = 'norm')
+  le.ci<-boot.ci(le.boot, conf = 0.95, type = 'norm')
+    # crate table of results to plot
+  stage.result<-matrix(c(
+    # stage pair names
+    'aj', 'ae', 'jl', 'le',
+    # means
+    aj.boot$t0, ae.boot$t0, jl.boot$t0, le.boot$t0, 
+    # CI plus
+    aj.ci$normal[,2], ae.ci$normal[,2], NA, le.ci$normal[,2],
+    # CI minus
+    aj.ci$normal[,3], ae.ci$normal[,3], NA, le.ci$normal[,3],
+    # N 
+    length(aj$lrr), length(ae$lrr), length(jl$lrr), length(le$lrr)
+  ), nrow = 4, ncol = 5)
+
+  # convert to data frame and save as csv
+  stage.result<-as.data.frame(stage.result)
+  colnames(stage.result)<-c('Stage_Pair', 'Mean', 'Upper_CI', 'Lower_CI', 'N')
+  
+### Calculate Fail-safe numbers using two methods
+  tempxleth.fs1<-fsn(yi = lrr, vi = Ones, data = tempxleth, type = 'Rosenthal', alpha = 0.05)
+  phxleth.fs1<-fsn(yi = lrr, vi = Ones, data = phxleth, type = 'Rosenthal')
+  doxleth.fs1<-fsn(yi = lrr, vi = Ones, data = doxleth, typ = 'Rosenthal')
+  
+  tempxleth.fs2<-fsn(yi = lrr, vi = Ones, data = tempxleth, type = 'Rosenberg')
+  phxleth.fs2<-fsn(yi = lrr, vi = Ones, data = phxleth, type = 'Rosenberg')
+  doxleth.fs2<-fsn(yi = lrr, vi = Ones, data = doxleth, type = 'Rosenberg')
+  
+  tempxleth.fs1
+  phxleth.fs1
+  doxleth.fs1
+  
+  tempxleth.fs2
+  phxleth.fs2
+  doxleth.fs2
+  
+  # make numeric
+  stage.result$Mean<-as.numeric(paste(stage.result$Mean))
+  stage.result$Lower_CI<-as.numeric(paste(stage.result$Lower_CI))
+  stage.result$Upper_CI<-as.numeric(paste(stage.result$Upper_CI))
+  
+  # Plot results
+  plot(0,type='n', #make empty plot
+       xlim=c(-5,5),
+       ylim=c(0.75,6.25), 
+       xlab='LRR Difference', 
+       ylab = "",
+       main = 'Lethal - by stage',
+       pch=19, yaxt='n', axes=F, cex.lab=1.5)
+  
+  abline(v=0, lty = 2, lwd = 2) # make dotted line @ x = 0
+  
+  # add in CI's
+  arrows(stage.result$Upper_CI,4:1,stage.result$Lower_CI,4:1, angle = 90, code = 3, length = 0, lty = 1, lwd=5, col='grey') 
+  
+  axis(2, at=c(1,2,3,4), labels= c('Larva-Embryo', 'Juvenile-Larva', 'Adult-Embryo', 'Adult-Juvenile'), cex.axis=1.25, las = 2, tick = FALSE)
+  points(stage.result$Mean, 4:1, cex=1.5, pch=19, col='black')
+  axis(1, cex.axis=1.25, tick = FALSE)
+  box() # adds box around figures
+
+### Re-do lethal analyses + figure only with species as unit of replication instead of study
+  # create column with concatenated genus + species
+  tempxleth$spp<-paste(tempxleth$genus,tempxleth$species)
+  phxleth$spp<-paste(phxleth$genus, phxleth$species)
+  doxleth$spp<-paste(doxleth$genus, doxleth$species)
+
+  # use ddply to take mean lrr difference for each spp 
+  tempxspp<-ddply(tempxleth, c('spp'), summarize,
+                  lrr.avg = mean(lrr, na.rm = TRUE))
+  phxspp<-ddply(phxleth, c('spp'), summarize, lrr.avg = mean(lrr, na.rm = TRUE))
+  doxspp<-ddply(doxleth, c('spp'), summarize, lrr.avg = mean(lrr, na.rm = TRUE))
+  
+  # bootstrapping
+  tempxspp.boot<-boot(tempxspp$lrr.avg, bootmean, R = 10000)
+  phxspp.boot<-boot(phxspp$lrr.avg, bootmean, R = 10000)
+  doxspp.boot<-boot(doxspp$lrr.avg, bootmean, R = 10000)
+  
+  # CI construction
+  tempxspp.ci<-boot.ci(tempxspp.boot, conf = 0.95, type = 'norm')
+  phxspp.ci<-boot.ci(phxspp.boot, conf = 0.95, type = 'norm')
+  doxspp.ci<-boot.ci(doxspp.boot, conf = 0.95, type = 'norm')
+  
+  # Make results matrix
+  spp.results<-matrix(c(
+    # names
+    'Warming', 'Acidification', 'Hypoxia',
+    # mean
+    tempxspp.boot$t0, phxspp.boot$t0, doxspp.boot$t0,
+    # CI plus
+    tempxspp.ci$normal[,2], phxspp.ci$normal[,2], doxspp.ci$normal[,2],
+    # CI minus
+    tempxspp.ci$normal[,3], phxspp.ci$normal[,3], doxspp.ci$normal[,3],
+    # sample size
+    length(tempxspp$lrr.avg), length(phxspp$lrr.avg), length(doxspp$lrr.avg))
+    # specify rows and columns 
+    
+   , nrow = 3, ncol = 5)
+  spp.results
+  
+  # Convert results matrix into data frame with numbers as numeric
+  spp.results<-as.data.frame(spp.results)
+  colnames(spp.results)<-c('stor', 'Mean', 'Upper_CI', 'Lower_CI', 'N')
+  spp.results$Mean<-as.numeric(paste(spp.results$Mean))
+  spp.results$Upper_CI<-as.numeric(paste(spp.results$Upper_CI))
+  spp.results$Lower_CI<-as.numeric(paste(spp.results$Lower_CI))
+  
+  spp.results
+  
+  # Save for comparison table in supplement
+  
